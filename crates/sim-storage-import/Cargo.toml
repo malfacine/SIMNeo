@@ -1,0 +1,25 @@
+[package]
+name = "sim-storage-import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+sim-core.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+rusqlite = { version = "0.41", features = ["bundled"] }
+quick-xml = { version = "0.42", features = ["serialize"] }
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
+base64 = "0.22"
+zeroize = "1"
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs", "aes-crypto"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+
+[dev-dependencies]
+tempfile = "3"

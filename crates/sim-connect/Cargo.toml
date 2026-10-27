@@ -1,0 +1,18 @@
+[package]
+name = "sim-connect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+sim-core.workspace = true
+sim-media = {path = "../sim-media"}
+sim-p2p-t2u = { path = "../sim-p2p-t2u" }
+sim-storage-import.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+zeroize.workspace = true
+sim-proto-dahua = { path = "../sim-proto-dahua" }

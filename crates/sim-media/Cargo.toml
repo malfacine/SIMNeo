@@ -1,0 +1,17 @@
+[package]
+name = "sim-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+sim-core.workspace = true
+ffmpeg-next = { version = "=8.1.0", default-features = false, features = ["format", "software-scaling"] }
+thiserror.workspace = true
+zeroize.workspace = true
+url = "2"
+
+[dev-dependencies]
+tempfile = "3"

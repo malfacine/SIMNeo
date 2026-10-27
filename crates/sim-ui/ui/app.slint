@@ -1,0 +1,586 @@
+import { Button, LineEdit, ListView, ComboBox, CheckBox, Date } from "std-widgets.slint";
+import { CalendarPopup, CalendarDay } from "calendar.slint";
+export struct DeviceRow { id: string, name: string, endpoint: string, summary: string, state: int, state-text: string }
+export struct ChannelRow { number: int, name: string }
+export struct TileRect { x: float, y: float, width: float, height: float }
+export struct LayoutChoice { count: int, label: string, cells: [TileRect] }
+export struct PlaybackChannel { number: int, name: string, checked: bool }
+export struct TimelineSegment { slot: int, start: float, end: float, kind: int }
+export struct VideoTile { image: image, title: string, status: string, assigned: bool, playing: bool, details: string }
+component LayoutPreview inherits Rectangle {
+    in property <[TileRect]> cells;
+    background: #d4dae3;
+    for cell in root.cells: Rectangle {
+        x:cell.x * parent.width; y:cell.y * parent.height;
+        width:cell.width * parent.width; height:cell.height * parent.height;
+        background:#8491a8; border-width:0.6px; border-color:#e8ebef;
+    }
+}
+component LayoutOption inherits Rectangle {
+    in property <LayoutChoice> choice;
+    in property <bool> selected;
+    callback activated();
+    background: root.selected ? #d9eadd : pointer.has-hover ? #dceaf2 : transparent;
+    border-width: focus.has-focus ? 1px : 0px; border-color:#168436;
+    accessible-role:button; accessible-label:root.choice.label;
+    accessible-action-default=>{root.activated();}
+    forward-focus:focus;
+    LayoutPreview {x:7px;y:8px;width:36px;height:28px;cells:root.choice.cells;}
+    Text {y:40px;width:parent.width;height:20px;text:"" + root.choice.count;color:#263238;
+        font-size:12px;horizontal-alignment:center;vertical-alignment:center;}
+    focus := FocusScope {
+        pointer := TouchArea {clicked=>{focus.focus();root.activated();}}
+        key-pressed(event)=>{
+            if event.text=="\n" || event.text==" " {root.activated();return accept;}
+            return reject;
+        }
+    }
+}
+component Label inherits Text { color: #52616a; font-size: 12px; vertical-stretch: 0; }
+component ActionButton inherits Button { height: 32px; vertical-stretch: 0; }
+component Field inherits LineEdit { height: 34px; }
+component Divider inherits Rectangle { height: 1px; background: #c5c9cd; }
+component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> active;
+    callback activated();
+    height: 43px;
+    background: root.active ? #d9eadd : pointer.has-hover ? #e2e5e5 : #eeeeee;
+    accessible-role: button; accessible-label: root.text;
+    accessible-action-default => { root.activated(); }
+    forward-focus: focus;
+    Rectangle { x: 0px; y: 0px; width: 3px; height: parent.height; background: root.active ? #06b83a : transparent; }
+    Image { x: 18px; y: 11px; width: 21px; height: 21px; source: root.icon; }
+    Text { x: 53px; width: parent.width - 65px; height: parent.height; text: root.text;
+        color: #263238; font-size: 14px; font-weight: root.active ? 600 : 400; vertical-alignment: center; }
+    Rectangle { x: 5px; y: 3px; width: parent.width - 10px; height: parent.height - 6px;
+        border-width: focus.has-focus ? 1px : 0px; border-color: #168436; background: transparent; }
+    focus := FocusScope {
+        pointer := TouchArea { clicked => { focus.focus(); root.activated(); } }
+        key-pressed(event) => {
+            if event.text == "\n" || event.text == " " { root.activated(); return accept; }
+            return reject;
+        }
+    }
+}
+export component AppWindow inherits Window {
+    title: "SIMNeo";
+    icon: @image-url("../../../assets/icon.png");
+    preferred-width: 1180px; preferred-height: 720px; min-width: 920px; min-height: 640px;
+    background: #d4d4d4; default-font-family: "Segoe UI"; default-font-size: 13px;
+    in property <[DeviceRow]> devices;
+    in property <[ChannelRow]> channels;
+    in property <[VideoTile]> video-tiles;
+    in property <int> active-videos: 0;
+    in-out property <int> video-channel: 0;
+    in-out property <int> selected-slot: 0;
+    in-out property <int> global-quality: 0;
+    in-out property <int> layout-size: 4;
+    in-out property <bool> tile-expanded: false;
+    in-out property <bool> tree-expanded: true;
+    in property <[TileRect]> tile-rects;
+    in-out property <int> layout-index: 1;
+    in property <[LayoutChoice]> layout-choices;
+    in property <string> app-version;
+    in property <[string]> playback-devices;
+    in-out property <int> playback-device:0;
+    in property <[PlaybackChannel]> playback-channels;
+    in property <[VideoTile]> playback-tiles;
+    in property <[TimelineSegment]> playback-segments;
+    in property <[string]> playback-names;
+    in-out property <string> playback-date;
+    in property <Date> playback-calendar-date;
+    in property <string> playback-date-label;
+    callback choose-playback-date(int,int,int);
+    in property <[CalendarDay]> calendar-days;
+    in property <int> calendar-year;
+    in property <int> calendar-month;
+    callback open-calendar();callback navigate-calendar(int);callback change-calendar-month(int);callback change-calendar-year(int);callback pick-calendar-day(int);callback calendar-today();
+    in-out property <string> playback-from:"00:00:00";
+    in-out property <string> playback-to:"23:59:59";
+    in property <string> playback-range-start:"00:00:00";
+    in property <string> playback-range-end:"23:59:59";
+    in property <string> playback-message:"Selecione um DVR para pesquisar gravações.";
+    in property <bool> playback-busy:false;
+    in property <bool> playback-ready:false;
+    in property <bool> playback-running:false;
+    in property <bool> playback-buffering:false;
+    in property <bool> playback-paused:false;
+    in-out property <int> playback-speed-index:0;
+    callback playback-speed-changed(int);
+    in property <float> playback-cursor:0;
+    in property <string> playback-clock:"00:00:00";
+    in-out property <int> playback-selected:0;
+    in-out property <bool> export-dialog:false;
+    in property <string> export-channel;
+    in-out property <string> export-from;
+    in-out property <string> export-to;
+    in-out property <string> export-path;
+    in property <string> export-filename;
+    in-out property <int> export-quality:0;
+    callback export-range-edited();
+    in property <bool> export-busy:false;
+    in property <string> export-message;
+    callback select-playback-device(int);
+    callback toggle-playback-channel(int,bool);
+    callback search-playback(); callback seek-playback(float);
+    callback play-pause(); callback stop-playback();
+    callback prepare-export(); callback export-playback(); callback cancel-export(); callback browse-playback-export();
+    callback choose-layout(int);
+    in property <string> total: "0 dispositivos";
+    in property <string> status: "Carregando cadastro local…";
+    in property <bool> busy: true;
+    in property <string> selected-name;
+    in property <string> selected-endpoint;
+    in property <string> selected-manufacturer;
+    in property <int> selected-index: -1;
+    in property <string> selected-id;
+    in property <string> active-id;
+    in property <bool> network-active: false;
+    in property <bool> network-online: false;
+    in property <string> connection-message: "Selecione um dispositivo para conectar.";
+    in-out property <string> search;
+    in-out property <string> mode: "catalog";
+    in-out property <string> page: "view";
+    in-out property <string> dialog;
+    in-out property <string> edit-id;
+    in-out property <string> form-name;
+    in-out property <string> form-address;
+    in-out property <string> form-serial;
+    in-out property <string> form-port: "37777";
+    in-out property <string> form-user: "admin";
+    in-out property <string> form-password;
+    in-out property <string> form-count: "16";
+    in-out property <bool> testing-device: false;
+    in-out property <string> probe-message;
+    callback test-device(); callback cancel-test();
+    in-out property <int> form-maker: 0;
+    in-out property <bool> form-use-ip: false;
+    in-out property <bool> form-use-serial: true;
+    private property <int> form-connection: root.form-use-ip ? (root.form-use-serial ? 2 : 0) : (root.form-use-serial ? 1 : -1);
+    in-out property <string> import-path;
+    in-out property <string> zip-password;
+    in-out property <bool> option-restore: true;
+    in-out property <bool> option-startup: false;
+    in-out property <bool> option-gpu: true;
+    in property <string> options-message;
+    callback save-options();
+    callback edit-device(); callback delete-device(); callback browse-zip();
+    public function new-device() {
+        root.cancel-test();
+        root.edit-id=""; root.form-name=""; root.form-address=""; root.form-serial=""; root.form-port="37777";
+        root.form-user="admin"; root.form-password=""; root.form-count="16";
+        root.form-maker=0; root.form-use-ip=false; root.form-use-serial=true; root.dialog="device";
+    }
+    public function dismiss-dialog() {root.cancel-test();root.dialog="";root.form-password="";root.zip-password="";}
+    callback filter(string);
+    callback select-device(int);
+    callback open-device(int);
+    callback save-device(string, string, string, string, string, int, string, int, string);
+    callback import-xml(string, string);
+    callback connect-device(); callback disconnect-device();
+    callback play-video(int); callback close-video(int); callback stop-all();
+    callback quality(int); callback view-changed();
+    
+    calendar := CalendarPopup {x:12px;y:max(0px,root.height - 400px);days:root.calendar-days;month:root.calendar-month;year:root.calendar-year;
+        navigate(delta)=>{root.navigate-calendar(delta);}change-month(month)=>{root.change-calendar-month(month);}change-year(year)=>{root.change-calendar-year(year);}
+        pick(day)=>{root.pick-calendar-day(day);}today=>{root.calendar-today();}}
+    public function change-layout(count: int) {
+        root.layout-size = count; root.tile-expanded = false;
+        if root.selected-slot >= count { root.selected-slot = 0; }
+        root.view-changed();
+    }
+    HorizontalLayout { spacing: 0px;
+        // Lateral única com opções de cada tela.
+        Rectangle { width: 264px; background: #eeeeee;
+            VerticalLayout { spacing: 0px;
+                Rectangle { height: 70px; background: #333333;
+                    Text { x:200px; y:25px; width:54px; height:25px; text:"v" + root.app-version; color:#c7cbd0; font-size:11px; vertical-alignment:center; }
+                    Image { x: 17px; y: 20px; width: 174px; height: 35px;
+                        source: @image-url("../../../assets/logo.svg"); image-fit: contain; }
+                    Rectangle { y: parent.height - 2px; width: parent.width; height: 2px; background: #06cb3f; }
+                }
+                NavItem { text: "Visualização"; icon: @image-url("../../../assets/icons/view.svg"); active: root.page=="view"; activated=>{root.page="view";} }
+                NavItem { text: "Reprodução"; icon: @image-url("../../../assets/icons/play.svg"); active: root.page=="playback"; activated=>{root.page="playback";} }
+                NavItem { text: "Dispositivos"; icon: @image-url("../../../assets/icons/devices.svg"); active: root.page=="devices"; activated=>{root.page="devices";} }
+                NavItem { text: "Opções"; icon: @image-url("../../../assets/icons/options.svg"); active: root.page=="options"; activated=>{root.page="options";} }
+                Divider {}
+                if root.page=="view": VerticalLayout { padding: 12px; spacing: 8px;
+                    Text { text: "Dispositivos"; color: #263238; font-weight: 600; }
+                    Field { placeholder-text: "Buscar nome ou endereço"; text <=> root.search; edited => { root.filter(self.text); } }
+                    ListView { vertical-stretch: 1;
+                        for device[index] in root.devices: Rectangle {
+                            height: 43px + (root.selected-index == index && root.tree-expanded ? root.channels.length * 29px : 0px);
+                            VerticalLayout { spacing: 0px;
+                                Rectangle { height: 43px; background: root.selected-index == index ? #dde3e4 : transparent;
+                                    accessible-role: button; accessible-label: "Abrir câmeras de " + device.name;
+                                    accessible-action-default => {root.select-device(index);root.tree-expanded=true;root.open-device(index);}
+                                    Image { x: 3px; y: 15px; width: 12px; height: 12px;
+                                        source: root.selected-index == index && root.tree-expanded ? @image-url("../../../assets/icons/chevron-down.svg") : @image-url("../../../assets/icons/chevron-right.svg"); }
+                                    Image { x: 23px; y: 12px; width: 18px; height: 18px; source: @image-url("../../../assets/icons/devices.svg"); }
+                                    Text { x: 47px; y: 4px; width: parent.width - 69px; height: 21px; text: device.name; color: #263238; overflow: elide; font-weight: 600; }
+                                    Label { x: 47px; y: 24px; width: parent.width - 55px; text: device.state-text; overflow: elide; }
+                                    Rectangle { x: parent.width - 19px; y: 12px; width: 7px; height: 7px; border-radius: 4px;
+                                        background: device.state == 2 ? #168436 : device.state == 4 ? #b33c2e : #808b91; }
+                                    TouchArea { x:0px; y:0px; width:22px; height:parent.height; clicked => {
+                                        if root.selected-index == index { root.tree-expanded = !root.tree-expanded; }
+                                        else { root.select-device(index); root.tree-expanded = true; }
+                                    } }
+                                    TouchArea {x:22px;y:0px;width:parent.width - 22px;height:parent.height;
+                                        clicked=>{root.select-device(index);root.tree-expanded=true;root.open-device(index);}}
+                                }
+                                if root.selected-index == index && root.tree-expanded: VerticalLayout { spacing: 0px;
+                                    for channel in root.channels: Rectangle { height: 29px;
+                                        background: root.video-channel == channel.number ? #d9eadd : channel-pointer.has-hover ? #e2e5e5 : transparent;
+                                        Image { x: 25px; y: 7px; width: 15px; height: 15px; source: @image-url("../../../assets/icons/camera.svg"); }
+                                        Text { x: 49px; width: parent.width - 54px; height: parent.height; text: channel.name;
+                                            color: #34454e; font-size: 12px; overflow: elide; vertical-alignment: center; }
+                                        channel-pointer := TouchArea { clicked => {
+                                            root.video-channel = channel.number;
+                                            root.play-video(channel.number);
+                                        } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.devices.length == 0: Label { text: "Nenhum dispositivo encontrado."; wrap: word-wrap; }
+                    VerticalLayout { spacing: 8px; vertical-stretch: 0;
+                        Divider {}
+                        HorizontalLayout { spacing: 8px;
+                            Image { width: 18px; height: 18px; source: @image-url("../../../assets/icons/grid.svg"); }
+                            Text { text: "Layout de visualização"; color: #34454e; font-weight: 600; }
+                        }
+                        Rectangle { height:42px; vertical-stretch:0;
+                            background:layout-pointer.has-hover ? #d9e8ef : #e3e5e7;
+                            border-width:1px;border-color:layout-focus.has-focus ? #168436 : #aab1b8;border-radius:3px;
+                            accessible-role:button;accessible-label:"Selecionar layout de visualização";
+                            accessible-action-default=>{layout-popup.show();}
+                            forward-focus:layout-focus;
+                            LayoutPreview {x:55px;y:7px;width:38px;height:28px;cells:root.layout-choices[root.layout-index].cells;}
+                            Text {x:101px;height:parent.height;width:50px;text:""+root.layout-size;color:#263238;font-weight:600;vertical-alignment:center;}
+                            Image {x:parent.width - 24px;y:15px;width:12px;height:12px;source:@image-url("../../../assets/icons/chevron-down.svg");}
+                            layout-focus := FocusScope {
+                                layout-pointer := TouchArea {clicked=>{layout-focus.focus();layout-popup.show();}}
+                                key-pressed(event)=>{
+                                    if event.text=="\n" || event.text==" " || event.text==Key.DownArrow {layout-popup.show();return accept;}
+                                    return reject;
+                                }
+                            }
+                            layout-popup := PopupWindow {
+                                x:0px;y:-174px;width:478px;height:174px;
+                                close-policy:close-on-click-outside;
+                                Rectangle {background:#eeeeee;border-width:1px;border-color:#aab1b8;
+                                    Text {x:9px;y:8px;text:"Padrões";font-size:13px;color:#263238;}
+                                    for choice[index] in root.layout-choices: LayoutOption {
+                                        x:9px + mod(index,9) * 51px;y:32px + floor(index / 9) * 64px;
+                                        width:50px;height:62px;choice:choice;selected:index==root.layout-index;
+                                        activated=>{root.choose-layout(index);layout-popup.close();}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                }
+                
+                
+                if root.page=="playback": VerticalLayout {padding:12px;spacing:8px;
+                    Text {text:"Buscar gravações";color:#263238;font-weight:600;}
+                    Label {text:"Dispositivo";}
+                    ComboBox {height:32px;model:root.playback-devices;current-index<=>root.playback-device;
+                        selected(value)=>{root.select-playback-device(self.current-index);}}
+                    ListView {vertical-stretch:1;
+                        for channel in root.playback-channels: CheckBox {height:30px;text:channel.name;checked<=>channel.checked;
+                            toggled=>{root.toggle-playback-channel(channel.number,self.checked);}}
+                    }
+                    Label {text:"Selecione uma câmera · gravações do DVR";wrap:word-wrap;}
+                    Label {text:"Data";}
+                    Rectangle {height:34px;vertical-stretch:0;
+                        ActionButton {width:parent.width;height:34px;text:root.playback-date-label;
+                            clicked=>{root.open-calendar();calendar.show();}}
+                        Image {x:parent.width - 24px;y:11px;width:12px;height:12px;source:@image-url("../../../assets/icons/chevron-down.svg");}
+                    }
+                    HorizontalLayout {spacing:8px;
+                        VerticalLayout {spacing:4px;min-width:0px;horizontal-stretch:1;
+                            Label {text:"Início";} Field {min-width:0px;preferred-width:110px;horizontal-stretch:1;text<=>root.playback-from;}}
+                        VerticalLayout {spacing:4px;min-width:0px;horizontal-stretch:1;
+                            Label {text:"Fim";} Field {min-width:0px;preferred-width:110px;horizontal-stretch:1;text<=>root.playback-to;}}
+                    }
+                    ActionButton {text:root.playback-busy ? "Buscando / abrindo…" : "Buscar gravações";enabled:!root.playback-busy;clicked=>{root.search-playback();}}
+                }
+                if root.page=="devices": VerticalLayout { padding: 16px; spacing: 10px;
+                    Text { text:"Cadastro de dispositivos";font-weight:600;color:#34454e; }
+                    Label {text:"Adicione um DVR por serial Cloud/P2P ou endereço de rede.";wrap:word-wrap;}
+                    ActionButton {text:"Novo dispositivo";enabled:!root.busy;clicked=>{root.new-device();}}
+                    ActionButton {text:"Importar ZIP…";enabled:!root.busy;clicked=>{root.browse-zip();}}
+                    Divider {}
+                    Rectangle {vertical-stretch:1;}
+                }
+                if root.page=="options": VerticalLayout {padding:16px;spacing:10px;
+                    Text {text:"Preferências";font-weight:600;color:#34454e;}
+                    Label {text:"Inicialização e desempenho do vídeo.";wrap:word-wrap;}
+                    Rectangle {vertical-stretch:1;}
+                }
+            }
+        }
+        Rectangle { width: 1px; background: #b9bfc5; }
+        if root.page=="view": VerticalLayout { spacing: 0px;
+            Rectangle { height: 48px; background: #eeeeee;
+                HorizontalLayout { padding-left: 18px; padding-right: 14px; padding-top:8px; padding-bottom:8px; spacing: 12px;
+                    Text { height:32px; text: "Visualização"; color: #34454e; font-size: 17px; font-weight: 600; vertical-alignment: center; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Label { height:32px; text: "Qualidade"; vertical-alignment: center; }
+                    ComboBox { width:85px; height:32px; vertical-stretch:0; model: ["SD", "HD"];
+                        current-index: root.global-quality;
+                        selected(value) => { root.quality(self.current-index); }
+                    }
+                    ActionButton { text: root.tile-expanded ? "Mosaico" : "Ampliar"; clicked => { root.tile-expanded = !root.tile-expanded; root.view-changed(); } }
+                    ActionButton { text: "Fechar canal"; enabled: root.video-tiles[root.selected-slot].assigned; clicked => { root.close-video(root.selected-slot); } }
+                    ActionButton { text: "Parar todos"; enabled: root.active-videos > 0; clicked => { root.stop-all(); } }
+                }
+            }
+            Rectangle { background: #d4d4d4;
+                tiles := Rectangle { x: 8px; y: 8px; width: parent.width - 16px; height: parent.height - 16px;
+                    for tile in 64: Rectangle {
+                        private property <VideoTile> content: root.video-tiles[tile];
+                        visible: root.tile-expanded ? tile == root.selected-slot : tile < root.layout-size;
+                        x: root.tile-expanded ? 0px : root.tile-rects[tile].x * tiles.width;
+                        y: root.tile-expanded ? 0px : root.tile-rects[tile].y * tiles.height;
+                        width: root.tile-expanded ? tiles.width : root.tile-rects[tile].width * tiles.width;
+                        height: root.tile-expanded ? tiles.height : root.tile-rects[tile].height * tiles.height;
+                        background: #5c6677; clip: true;
+                        if self.content.playing: Image { x: 1px; y: 1px; width: parent.width - 2px; height: parent.height - 2px; source: root.video-tiles[tile].image; image-fit: contain; }
+                        if !self.content.assigned: Text { text: "" + (tile + 1); color: #c2c8d0; font-size: 20px; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; }
+                        if self.content.assigned && !self.content.playing: Text { x: 18px; width: parent.width - 36px; height: parent.height; text: root.video-tiles[tile].status; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
+                        Rectangle { width: parent.width; height: parent.height; background: transparent; border-width: 1px; border-color: root.selected-slot == tile ? #06cb3f : #adb3bd; }
+                        tile-pointer := TouchArea { clicked => { root.selected-slot = tile; } double-clicked => { root.selected-slot = tile; root.tile-expanded = !root.tile-expanded; root.view-changed(); } }
+                        Rectangle { x:1px; y:parent.height - 27px; width:parent.width - 2px; height:26px; background:#52616acc;
+                            visible:root.video-tiles[tile].assigned && (tile-pointer.has-hover || bar-pointer.has-hover || close-pointer.has-hover);
+                            bar-pointer := TouchArea { clicked=>{root.selected-slot=tile;} double-clicked=>{root.selected-slot=tile;root.tile-expanded=!root.tile-expanded;root.view-changed();} }
+                            HorizontalLayout {padding-left:7px;spacing:8px;
+                                Text {height:26px;min-width:0px;horizontal-stretch:1;text:root.video-tiles[tile].title;color:#ffffff;overflow:elide;font-size:12px;vertical-alignment:center;}
+                                Text {height:26px;horizontal-stretch:0;text:root.video-tiles[tile].details;color:#ffffff;font-size:12px;vertical-alignment:center;}
+                                Rectangle {width:28px;height:26px;background:close-pointer.has-hover ? #b33c2e : transparent;
+                                    accessible-role:button;accessible-label:"Fechar câmera "+root.video-tiles[tile].title;
+                                    accessible-action-default=>{root.close-video(tile);}
+                                    Image {x:8px;y:7px;width:12px;height:12px;source:@image-url("../../../assets/icons/close.svg");}
+                                    close-pointer := TouchArea {clicked=>{root.close-video(tile);}}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            
+            
+        }
+        if root.page=="playback": VerticalLayout {spacing:0px;
+            Rectangle {height:48px;background:#eeeeee;
+                HorizontalLayout {padding-left:18px;padding-right:14px;padding-top:8px;padding-bottom:8px;spacing:12px;
+                    Text {text:"Reprodução";height:32px;vertical-alignment:center;font-size:17px;font-weight:600;color:#34454e;}
+                    Rectangle {horizontal-stretch:1;}
+                    ActionButton {text:"Exportar Video…";enabled:root.playback-ready && !root.export-busy;clicked=>{root.prepare-export();}}
+                }
+            }
+            Rectangle {background:#d4d4d4;vertical-stretch:1;
+                playback-grid := Rectangle {x:8px;y:8px;width:parent.width - 16px;height:parent.height - 16px;
+                    for tile in 1: Rectangle {
+                        private property <VideoTile> content:root.playback-tiles[tile];
+                        width:parent.width;height:parent.height;
+                        background:#5c6677;clip:true;
+                        if self.content.playing: Image {x:1px;y:1px;width:parent.width - 2px;height:parent.height - 2px;source:root.playback-tiles[tile].image;image-fit:contain;}
+                        if !self.content.playing: Text {width:parent.width;height:parent.height;color:#e0e4e9;text:root.playback-tiles[tile].assigned ? root.playback-tiles[tile].status : ""+(tile+1);horizontal-alignment:center;vertical-alignment:center;wrap:word-wrap;}
+                        Rectangle {width:parent.width;height:parent.height;background:transparent;border-width:1px;border-color:root.playback-selected==tile ? #06cb3f : #adb3bd;}
+                        playback-pointer := TouchArea {}
+                        if playback-pointer.has-hover && root.playback-tiles[tile].assigned: Rectangle {y:parent.height - 26px;width:parent.width;height:26px;background:#52616acc;
+                            Text {x:7px;width:parent.width - 14px;height:parent.height;text:root.playback-tiles[tile].title;color:white;vertical-alignment:center;overflow:elide;}}
+                    }
+                }
+            }
+            Rectangle {height:35px;background:#eeeeee;
+                Label {x:12px;width:parent.width - 24px;height:parent.height;text:root.playback-buffering && !root.playback-paused ? "Carregando buffer de vídeo…" : root.playback-message;vertical-alignment:center;overflow:elide;}
+            }
+            Rectangle {height:35px + root.playback-names.length * 28px;background:#eeeeee;
+                HorizontalLayout {x:126px;y:0px;width:parent.width - 142px;height:25px;
+                    Label {text:root.playback-range-start;}
+                    Rectangle {horizontal-stretch:1;}
+                    Label {text:root.playback-clock;color:#168436;font-weight:600;}
+                    Rectangle {horizontal-stretch:1;}
+                    Label {text:root.playback-range-end;}
+                }
+                for name[slot] in root.playback-names: Rectangle {x:8px;y:25px + slot*28px;width:parent.width - 16px;height:27px;
+                    Rectangle {width:110px;height:parent.height;background:root.playback-selected==slot ? #d9eadd : #e1e4e6;
+                        Text {x:5px;width:parent.width - 10px;height:parent.height;text:name;color:#34454e;font-size:12px;overflow:elide;vertical-alignment:center;}}
+                    track := Rectangle {x:118px;width:parent.width - 126px;height:parent.height;background:#37424e;
+                        for hour in 25: Rectangle {x:hour*parent.width/24;width:1px;height:parent.height;background:#69737f;}
+                        for segment in root.playback-segments: Rectangle {visible:segment.slot==slot;x:segment.start * parent.width;width:(segment.end - segment.start)*parent.width;height:parent.height - 2px;y:1px;
+                            background:segment.kind==1 ? #db3c45 : segment.kind==2 ? #edbf2f : #0dbd45;}
+                        Rectangle {x:root.playback-cursor*parent.width;width:2px;height:parent.height;background:white;}
+                        TouchArea {enabled:root.playback-ready;clicked=>{root.playback-selected=slot;root.seek-playback(self.mouse-x/self.width);}}
+                    }
+                }
+            }
+            Rectangle {height:50px;background:#eeeeee;
+                HorizontalLayout {alignment:center;padding:8px;spacing:12px;
+                    ActionButton {text:root.playback-running && !root.playback-paused ? "Pausar" : "Reproduzir";enabled:root.playback-ready && !root.playback-busy;clicked=>{root.play-pause();}}
+                    ActionButton {text:"Parar";enabled:root.playback-running || root.playback-busy;clicked=>{root.stop-playback();}}
+                    ComboBox {width:88px;height:32px;model:["1×","2×","4×","8×","16×"];current-index<=>root.playback-speed-index;
+                        selected(value)=>{root.playback-speed-changed(self.current-index);}}
+                }
+            }
+        }
+        if root.page=="devices": VerticalLayout { padding:16px; spacing:12px;
+            Text {text:"Dispositivos";font-size:20px;font-weight:600;color:#34454e;}
+            HorizontalLayout {spacing:8px;
+                Field {placeholder-text:"Buscar nome ou endereço";text<=>root.search;edited=>{root.filter(self.text);}}
+            }
+            Label {text:root.total;}
+            Rectangle {background:#eeeeee;border-width:1px;border-color:#b9bfc5;
+                VerticalLayout {spacing:0px;padding:1px;
+                    Rectangle {height:34px;background:#bfc3c7;
+                        HorizontalLayout {padding-left:12px;padding-right:12px;spacing:12px;
+                            Text {text:"Nome / Conexão";horizontal-stretch:1;vertical-alignment:center;}
+                            Text {text:"Canais";width:100px;vertical-alignment:center;}
+                            Text {text:"Status";width:100px;vertical-alignment:center;}
+                        }
+                    }
+                    ListView {vertical-stretch:1;
+                        for device[index] in root.devices: Rectangle {
+                            height:62px;background:root.selected-index==index ? #d9eadd : mod(index,2)==0 ? #f7f7f7 : #eeeeee;
+                            accessible-role:button;accessible-label:"Selecionar "+device.name;
+                            accessible-action-default=>{root.select-device(index);}
+                            HorizontalLayout {padding:12px;spacing:12px;
+                                VerticalLayout {spacing:3px;horizontal-stretch:1;
+                                    Text {text:device.name;color:#263238;font-weight:600;overflow:elide;}
+                                    Label {text:device.endpoint;overflow:elide;}
+                                }
+                                Label {text:device.summary;width:100px;vertical-alignment:center;}
+                                Label {text:device.state-text;width:100px;vertical-alignment:center;}
+                            }
+                            TouchArea {clicked=>{root.select-device(index);}double-clicked=>{root.select-device(index);root.edit-device();}}
+                        }
+                    }
+                    if root.devices.length==0: Text {text:"Nenhum dispositivo cadastrado. Use Novo ou Importar ZIP.";color:#52616a;horizontal-alignment:center;wrap:word-wrap;}
+                }
+            }
+            HorizontalLayout {spacing:8px;
+                ActionButton {text:"Editar";enabled:root.selected-index>=0 && !root.busy;clicked=>{root.edit-device();}}
+                ActionButton {text:"Excluir";enabled:root.selected-index>=0 && !root.busy;clicked=>{root.dialog="delete";}}
+                Rectangle {horizontal-stretch:1;}
+                Label {text:root.selected-manufacturer;vertical-alignment:center;}
+            }
+            Label {text:root.status;wrap:word-wrap;}
+        }
+
+        if root.page=="options": VerticalLayout {padding:24px;spacing:16px;
+            Text {text:"Opções";font-size:20px;font-weight:600;color:#34454e;}
+            Rectangle {background:#eeeeee;border-width:1px;border-color:#b9bfc5;vertical-stretch:0;
+                VerticalLayout {padding:20px;spacing:12px;
+                    Text {text:"Inicialização";font-weight:600;color:#34454e;}
+                    CheckBox {text:"Iniciar com a última visualização usada";checked<=>root.option-restore;}
+                    Label {text:"Reabre o layout e as câmeras ao iniciar o SIMNeo.";wrap:word-wrap;}
+                    CheckBox {text:"Iniciar com o Windows";checked<=>root.option-startup;}
+                    Label {text:"Abre o SIMNeo ao entrar neste usuário do Windows.";wrap:word-wrap;}
+                    Divider {}
+                    Text {text:"Vídeo";font-weight:600;color:#34454e;}
+                    CheckBox {text:"Ativar aceleração por GPU";checked<=>root.option-gpu;}
+                    Label {text:"Usa D3D11VA para decodificar H.264/H.265. Se indisponível, usa CPU.";wrap:word-wrap;}
+                }
+            }
+            HorizontalLayout {ActionButton {text:"Salvar opções";enabled:!root.busy;clicked=>{root.save-options();}} Rectangle {horizontal-stretch:1;}}
+            Label {text:root.options-message;wrap:word-wrap;}
+            Rectangle {vertical-stretch:1;}
+        }
+    }
+    if root.export-dialog: Rectangle {background:#00000066;
+        TouchArea {}
+        Rectangle {width:560px;height:412px;x:(parent.width - self.width)/2;y:(parent.height - self.height)/2;background:#eeeeee;border-width:1px;border-color:#aab1b8;
+            Rectangle {x:0px;y:0px;height:3px;width:parent.width;background:#06cb3f;}
+            VerticalLayout {padding:20px;spacing:12px;
+                VerticalLayout {spacing:4px;vertical-stretch:0;
+                    Text {text:"Exportar Video";font-size:18px;font-weight:600;color:#34454e;}
+                    Label {text:root.export-channel;overflow:elide;}
+                }
+                HorizontalLayout {spacing:12px;vertical-stretch:0;
+                    VerticalLayout {spacing:4px;min-width:0px;horizontal-stretch:1;Label {text:"Hora inicial";}
+                        Field {min-width:0px;preferred-width:200px;text<=>root.export-from;enabled:!root.export-busy;edited=>{root.export-range-edited();}}}
+                    VerticalLayout {spacing:4px;min-width:0px;horizontal-stretch:1;Label {text:"Hora final";}
+                        Field {min-width:0px;preferred-width:200px;text<=>root.export-to;enabled:!root.export-busy;edited=>{root.export-range-edited();}}}
+                }
+                HorizontalLayout {spacing:12px;vertical-stretch:0;
+                    Label {text:"Qualidade";vertical-alignment:center;}
+                    ComboBox {width:90px;height:34px;model:["HD","SD"];current-index<=>root.export-quality;enabled:!root.export-busy;}
+                    Label {text:"Resolução original da gravação";horizontal-stretch:1;vertical-alignment:center;}
+                }
+                VerticalLayout {spacing:4px;vertical-stretch:0;
+                    Label {text:"Salvar em";}
+                    HorizontalLayout {spacing:8px;
+                        Field {min-width:0px;horizontal-stretch:1;text<=>root.export-path;placeholder-text:"Arquivo de destino.mp4";enabled:!root.export-busy;}
+                        ActionButton {width:96px;height:34px;text:"Escolher…";enabled:!root.export-busy;clicked=>{root.browse-playback-export();}}
+                    }
+                }
+                Label {min-height:36px;text:root.export-message;wrap:word-wrap;vertical-stretch:1;}
+                HorizontalLayout {alignment:end;spacing:10px;vertical-stretch:0;
+                    ActionButton {width:160px;text:root.export-busy ? "Cancelar exportação" : "Fechar";clicked=>{if root.export-busy {root.cancel-export();}else{root.export-dialog=false;}}}
+                    ActionButton {width:132px;text:"Exportar Video";enabled:!root.export-busy;clicked=>{root.export-playback();}}
+                }
+            }
+        }
+    }
+    if root.dialog!="": Rectangle {background:#00000066;
+        TouchArea {}
+        Rectangle {x:(parent.width - self.width)/2;y:(parent.height - self.height)/2;
+            width:root.dialog=="device" ? 560px : 510px;
+            height:root.dialog=="device" ? (root.form-connection==2 ? 610px : 570px) : root.dialog=="import" ? 300px : 220px;
+            background:#eeeeee;border-width:1px;border-color:#aeb4ba;
+            VerticalLayout {padding:20px;spacing:10px;
+                Text {text:root.dialog=="device" ? (root.edit-id=="" ? "Novo dispositivo" : "Editar dispositivo") : root.dialog=="import" ? "Importar dispositivos" : root.dialog=="delete" ? "Excluir dispositivo" : "Selecionar arquivo ZIP";color:#34454e;font-size:18px;font-weight:600;}
+                Divider {}
+                if root.dialog=="device": VerticalLayout {spacing:8px;
+                    HorizontalLayout {Label {text:"Nome";width:140px;vertical-alignment:center;} Field {text<=>root.form-name;}}
+                    HorizontalLayout {Label {text:"Conexão";width:140px;vertical-alignment:center;}
+                        CheckBox {text:"IP";checked<=>root.form-use-ip;}
+                        CheckBox {text:"Serial";checked<=>root.form-use-serial;}
+                    }
+                    if root.form-use-ip: HorizontalLayout {Label {text:"IP / domínio";width:140px;vertical-alignment:center;} Field {text<=>root.form-address;}}
+                    if root.form-use-serial: HorizontalLayout {Label {text:"Serial (Cloud)";width:140px;vertical-alignment:center;} Field {text<=>root.form-serial;}}
+                    if root.form-connection==-1: Label {text:"Marque IP, serial ou ambos para continuar.";color:#b33c2e;wrap:word-wrap;}
+                    HorizontalLayout {Label {text:"Porta de serviço";width:140px;vertical-alignment:center;} Field {text<=>root.form-port;}}
+                    HorizontalLayout {Label {text:"Fabricante";width:140px;vertical-alignment:center;} ComboBox {model:["Intelbras / Dahua","Jufeng / Xiongmai"];current-index<=>root.form-maker;}}
+                    HorizontalLayout {Label {text:"Usuário";width:140px;vertical-alignment:center;} Field {text<=>root.form-user;}}
+                    HorizontalLayout {Label {text:"Senha";width:140px;vertical-alignment:center;} Field {input-type:password;text<=>root.form-password;placeholder-text:root.edit-id=="" ? "Senha do dispositivo" : "Vazio mantém a senha atual";}}
+                    HorizontalLayout {Label {text:"Número de canais";width:140px;vertical-alignment:center;} Field {text<=>root.form-count;}}
+                }
+                if root.dialog=="import": VerticalLayout {spacing:10px;
+                    Label {text:root.import-path;wrap:word-wrap;}
+                    Label {text:"Senha do ZIP / exportação";}
+                    Field {input-type:password;text<=>root.zip-password;placeholder-text:"Informe a senha usada na exportação";}
+                }
+                if root.dialog=="delete": Label {text:"Excluir “"+root.selected-name+"” do cadastro? Os vídeos deste dispositivo serão encerrados.";wrap:word-wrap;}
+                if root.dialog=="device" && root.probe-message!="": Label {text:root.probe-message;wrap:word-wrap;}
+                Label {text:root.dialog=="picking" ? "Escolha o ZIP na janela de arquivos do Windows." : root.status;wrap:word-wrap;}
+                Rectangle {vertical-stretch:1;}
+                if root.dialog!="picking": HorizontalLayout {spacing:8px;
+                    if root.dialog=="device": ActionButton {text:root.testing-device ? "Testando…" : "Testar conexão";enabled:!root.busy && !root.testing-device && root.form-connection>=0;clicked=>{root.test-device();}}
+                    Rectangle {horizontal-stretch:1;}
+                    ActionButton {text:"Cancelar";enabled:!root.busy;clicked=>{root.dismiss-dialog();}}
+                    ActionButton {text:root.busy ? "Aguarde…" : root.dialog=="device" ? "Salvar" : root.dialog=="import" ? "Importar" : "Excluir";enabled:!root.busy && !root.testing-device && (root.dialog!="device" || root.form-connection>=0);
+                        clicked=>{
+                            if root.dialog=="device" {root.save-device(root.form-name,root.form-address,root.form-port,root.form-user,root.form-password,root.form-maker,root.form-count,root.form-connection,root.form-serial);root.form-password="";}
+                            else if root.dialog=="import" {root.import-xml(root.import-path,root.zip-password);root.zip-password="";}
+                            else {root.delete-device();}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+
+
+

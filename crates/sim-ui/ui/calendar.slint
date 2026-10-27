@@ -1,0 +1,64 @@
+import { Button, ComboBox, SpinBox } from "std-widgets.slint";
+
+export struct CalendarDay { number: int, selected: bool, today: bool }
+
+component DayButton inherits Rectangle {
+    in property <CalendarDay> day;
+    in property <string> label;
+    callback picked();
+    background: root.day.selected ? #168436 : pointer.has-hover && root.day.number > 0 ? #d9eadd : transparent;
+    border-radius:3px;
+    border-width: (root.day.today || focus.has-focus) && root.day.number > 0 ? 1px : 0px;
+    border-color:#168436;
+    accessible-role:button;accessible-label:root.label;
+    accessible-action-default=>{if root.day.number > 0 {root.picked();}}
+    forward-focus:focus;
+    Text {width:parent.width;height:parent.height;text:root.day.number > 0 ? "" + root.day.number : "";
+        color:root.day.selected ? white : #263238;font-size:13px;horizontal-alignment:center;vertical-alignment:center;}
+    focus := FocusScope {enabled:root.day.number > 0;
+        pointer := TouchArea {enabled:root.day.number > 0;clicked=>{root.picked();}}
+        key-pressed(event)=>{if event.text=="\n" || event.text==" " {root.picked();return accept;}return reject;}
+    }
+}
+
+export component CalendarPopup inherits PopupWindow {
+    in property <[CalendarDay]> days;
+    in property <int> month;
+    in property <int> year;
+    callback navigate(int);
+    callback change-month(int);
+    callback change-year(int);
+    callback pick(int);
+    callback today();
+    width:328px;height:362px;
+    close-policy:close-on-click-outside;
+    Rectangle {background:#eeeeee;border-width:1px;border-color:#aab1b8;
+        VerticalLayout {padding:12px;spacing:8px;
+            Text {text:"Selecionar data";font-weight:600;color:#34454e;}
+            HorizontalLayout {spacing:5px;
+                Button {width:28px;height:32px;text:"‹";accessible-label:"Mês anterior";clicked=>{root.navigate(-1);}}
+                ComboBox {min-width:0px;horizontal-stretch:1;height:32px;
+                    model:["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+                    current-index:root.month - 1;selected(value)=>{root.change-month(self.current-index + 1);}}
+                SpinBox {width:100px;height:32px;minimum:2000;maximum:2099;value:root.year;
+                    edited(value)=>{root.change-year(value);}}
+                Button {width:28px;height:32px;text:"›";accessible-label:"Próximo mês";clicked=>{root.navigate(1);}}
+            }
+            HorizontalLayout {spacing:0px;height:23px;
+                for day in ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"]:
+                    Text {text:day;horizontal-stretch:1;horizontal-alignment:center;vertical-alignment:center;color:#52616a;font-size:11px;}
+            }
+            Rectangle {height:204px;
+                for day[index] in root.days: DayButton {
+                    x:mod(index,7)*parent.width/7;y:floor(index/7)*34px;width:parent.width/7;height:33px;
+                    day:day;label:day.number > 0 ? "" + day.number + "/" + root.month + "/" + root.year : "";
+                    picked=>{root.pick(day.number);root.close();}
+                }
+            }
+            HorizontalLayout {spacing:8px;
+                Button {text:"Hoje";height:30px;clicked=>{root.today();root.close();}}
+                Button {text:"Fechar";height:30px;clicked=>{root.close();}}
+            }
+        }
+    }
+}

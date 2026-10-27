@@ -1,0 +1,14 @@
+/target/
+/.tools/
+/data/
+/dist/
+/docs/
+/fixtures/
+/scripts/
+*.db
+*.db-shm
+*.db-wal
+*.sdf
+*.log
+plano_arquitetura_rust_simnext.md
+relatorio_rea_simnext.md
