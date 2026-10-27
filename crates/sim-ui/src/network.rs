@@ -147,12 +147,36 @@ impl Drop for Handle {
     }
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Coordinator {
     server: String,
     port: u16,
     key: String,
     tunnel_password: String,
     remote_ip: String,
+}
+impl Coordinator {
+    fn load(path: &std::path::Path) -> Result<Self, Failure> {
+        let json = if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
+            zeroize::Zeroizing::new(std::fs::read_to_string(path)?)
+        } else {
+            read_protected_file(path)?
+        };
+        let config: Self =
+            serde_json::from_str(&json).map_err(|_| "Configuração do serviço P2P inválida.")?;
+        if config.server.trim().is_empty()
+            || config.port == 0
+            || config.key.is_empty()
+            || config.tunnel_password.is_empty()
+            || config.remote_ip.trim().is_empty()
+        {
+            return Err("Configuração do serviço P2P incompleta.".into());
+        }
+        Ok(config)
+    }
 }
 impl Drop for Coordinator {
     fn drop(&mut self) {
@@ -166,13 +190,11 @@ struct Relay {
 }
 impl Relay {
     fn load(settings: &Settings) -> Result<Self, Failure> {
-        let path = settings
-            .coordinator
-            .as_ref()
-            .ok_or("Configure o coordenador P2P.")?;
+        let path = settings.coordinator.as_ref().ok_or(
+            "Configuração do serviço P2P ausente. Use o pacote com o perfil P2P configurado.",
+        )?;
         let sdk = settings.sdk.as_ref().ok_or("Configure o SDK P2P.")?;
-        let config: Coordinator = serde_json::from_str(&read_protected_file(path)?)
-            .map_err(|_| "Configuração protegida do coordenador inválida.")?;
+        let config = Coordinator::load(path)?;
         let client = sim_p2p_t2u::Client::load(sdk, &config.server, config.port, &config.key)?;
         Ok(Self { client, config })
     }

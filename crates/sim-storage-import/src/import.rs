@@ -123,13 +123,15 @@ pub fn parse_simnext_xml(xml: &str, key: &str) -> Result<Vec<NewDevice>, Error> 
         } else {
             item.main_ip.trim()
         };
-        let primary = if item.is_intelbras_cloud_enabled && primary == item.serial_number.trim() {
+        let primary = if item.is_intelbras_cloud_enabled
+            && primary.eq_ignore_ascii_case(item.serial_number.trim())
+        {
             ""
         } else {
             primary
         };
         let serial_only = primary.is_empty() && !item.serial_number.trim().is_empty();
-        let config = DeviceDraft {
+        let mut config = DeviceDraft {
             serial: if !serial_only && !item.serial_number.trim().is_empty() {
                 Some(item.serial_number.trim().into())
             } else {
@@ -159,6 +161,7 @@ pub fn parse_simnext_xml(xml: &str, key: &str) -> Result<Vec<NewDevice>, Error> 
                 })
                 .collect(),
         };
+        config.normalize_serials();
         config.validate()?;
         let password = if item.encrypted_password.is_empty() {
             Zeroizing::new(String::new())

@@ -26,7 +26,8 @@ pub struct NewDevice {
 }
 
 impl NewDevice {
-    pub fn new(config: DeviceDraft, password: String) -> Self {
+    pub fn new(mut config: DeviceDraft, password: String) -> Self {
+        config.normalize_serials();
         Self {
             config,
             password: Zeroizing::new(password),

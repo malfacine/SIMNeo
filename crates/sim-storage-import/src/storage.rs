@@ -117,6 +117,7 @@ impl Store {
             .prepare("SELECT number,name FROM channels WHERE device_id=?1 ORDER BY number")?;
         let mut result = devices;
         for device in &mut result {
+            device.config.normalize_serials();
             device.config.channels = channel_query
                 .query_map([device.id], |r| {
                     Ok(Channel {

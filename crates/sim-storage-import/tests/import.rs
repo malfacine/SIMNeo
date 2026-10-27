@@ -3,6 +3,31 @@ use sim_storage_import::{decrypt_xml_password, parse_simnext_xml};
 const ENVELOPE: &str = "AAECAwQFBgcICQoLDA0ODw==";
 
 #[test]
+fn imported_serials_ignore_case_without_changing_the_ip_or_domain() {
+    for host in ["TeSt-SeRiAl01", "Camera.Example.org"] {
+        let xml = format!(
+            r#"<ExportableSystemData><Devices><Device>
+        <Name>Cloud</Name><MainIPAddress>{host}</MainIPAddress><SerialNumber>test-SERIAL01</SerialNumber>
+        <Port>37777</Port><UserName>AdminMixed</UserName><Manufacturer>Dahua</Manufacturer>
+        <IsIntelbrasCloudEnabled>true</IsIntelbrasCloudEnabled>
+        </Device></Devices></ExportableSystemData>"#
+        );
+        let devices = parse_simnext_xml(&xml, "").unwrap();
+        let draft = &devices[0].config;
+        if host.eq_ignore_ascii_case("test-serial01") {
+            assert_eq!(draft.connection, sim_core::ConnectionMode::P2p);
+            assert_eq!(draft.address, "TEST-SERIAL01");
+            assert!(draft.serial.is_none());
+        } else {
+            assert_eq!(draft.connection, sim_core::ConnectionMode::Address);
+            assert_eq!(draft.address, host);
+            assert_eq!(draft.serial.as_deref(), Some("TEST-SERIAL01"));
+        }
+        assert_eq!(draft.username, "AdminMixed");
+    }
+}
+
+#[test]
 fn imports_cloud_serial_and_original_export_password_field() {
     let xml = include_str!("../../../fixtures/simnext-example.xml")
         .replace("<Device>", "<Device><IsIntelbrasCloudEnabled>true</IsIntelbrasCloudEnabled><SerialNumber>TEST1234</SerialNumber>")

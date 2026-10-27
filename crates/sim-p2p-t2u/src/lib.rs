@@ -185,7 +185,7 @@ impl Client {
         if serial.is_empty() || remote_port == 0 {
             return Err(Error::InvalidInput);
         }
-        let serial = terminated(serial)?;
+        let serial = terminated(&serial.to_ascii_uppercase())?;
         let password = terminated(tunnel_password)?;
         let remote_ip = terminated(remote_ip)?;
         #[cfg(windows)]

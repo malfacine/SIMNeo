@@ -55,6 +55,15 @@ pub struct Device {
 pub struct ValidationError(pub &'static str);
 
 impl DeviceDraft {
+    pub fn normalize_serials(&mut self) {
+        if self.connection == ConnectionMode::P2p {
+            self.address.make_ascii_uppercase();
+        }
+        if let Some(serial) = &mut self.serial {
+            serial.make_ascii_uppercase();
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.name.trim().is_empty() || self.username.trim().is_empty() {
             return Err(ValidationError("Informe nome e usuário do dispositivo."));

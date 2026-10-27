@@ -33,11 +33,13 @@ Mantenha os arquivos do pacote juntos. Execute o programa diretamente da pasta e
 
 Você pode usar o IP do dispositivo, o serial ou os dois. Quando ambos estão
 cadastrados, o SIMNeo tenta o IP primeiro e usa o serial se essa conexão falhar.
+O serial pode ser digitado em maiúsculas ou minúsculas; o programa ajusta automaticamente.
 
 Para criar os túneis de conexão por serial, o SIMNeo utiliza a DLL original do
-SIM Next, `libt2u.dll`, localizada na pasta `assets`. A conexão por serial também
-depende da configuração do serviço P2P. Cadastros de dispositivos, senhas e
-configurações pessoais não acompanham o pacote público.
+SIM Next, `libt2u.dll`, localizada na pasta `assets`. O pacote corrigido inclui
+um perfil portável com os parâmetros do serviço P2P, independente do usuário do
+Windows. Cadastros de dispositivos e senhas dos DVRs continuam sendo pessoais
+e não acompanham o pacote.
 
 ## Sobre o projeto
 

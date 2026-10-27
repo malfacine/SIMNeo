@@ -10,6 +10,30 @@ use std::{
     time::Instant,
 };
 
+#[test]
+fn portable_service_profile_loads_without_windows_user_encryption() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("p2p-service.json");
+    let profile = serde_json::json!({"server":"example.invalid","port":1250,"key":"synthetic-app","tunnel_password":"synthetic-transport","remote_ip":"127.0.0.1"});
+    std::fs::write(&path, profile.to_string()).unwrap();
+    let loaded = Coordinator::load(&path).unwrap();
+    assert_eq!(loaded.server, "example.invalid");
+    assert_eq!(loaded.port, 1250);
+    assert_eq!(loaded.remote_ip, "127.0.0.1");
+    std::fs::write(&path, "{}").unwrap();
+    assert!(Coordinator::load(&path).is_err());
+    let mut invalid = profile.clone();
+    invalid["port"] = 0.into();
+    std::fs::write(&path, invalid.to_string()).unwrap();
+    assert!(Coordinator::load(&path).is_err());
+    let mut invalid = profile;
+    invalid["password"] = "synthetic-device".into();
+    std::fs::write(&path, invalid.to_string()).unwrap();
+    assert!(Coordinator::load(&path).is_err());
+    std::fs::write(&path, "invalid json").unwrap();
+    assert!(Coordinator::load(&path).is_err());
+}
+
 struct ControlServer {
     address: std::net::SocketAddr,
     stop: Arc<AtomicBool>,
@@ -361,7 +385,7 @@ fn dual_connection_tries_serial_after_ip_error_and_reports_missing_configuration
         for e in rx.try_iter() {
             if let Event::Device { state, message, .. } = e {
                 attempted |= message.contains("tentando pelo serial");
-                failed |= state == DeviceState::Error && message.contains("coordenador");
+                failed |= state == DeviceState::Error && message.contains("serviço P2P ausente");
             }
         }
         failed

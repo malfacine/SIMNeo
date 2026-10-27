@@ -1,7 +1,9 @@
 /target/
 /.tools/
+/.playwright-mcp/
 /data/
 /dist/
+/sdk/
 /docs/
 /fixtures/
 /scripts/
@@ -12,3 +14,4 @@
 *.log
 plano_arquitetura_rust_simnext.md
 relatorio_rea_simnext.md
+relatorio_rea_libt2u.md

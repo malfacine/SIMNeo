@@ -18,6 +18,52 @@ fn draft(name: &str, address: &str) -> DeviceDraft {
 }
 
 #[test]
+fn saves_uppercase_serials_and_reads_legacy_lowercase_without_changing_credentials() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("serial-case.db");
+    let mut store = Store::open(&path).unwrap();
+    let mut p2p = draft("Legacy", "test-Serial01");
+    p2p.connection = sim_core::ConnectionMode::P2p;
+    store
+        .insert_batch(&[NewDevice::new(p2p, "MixedPassword".into())])
+        .unwrap();
+    let id = store.list().unwrap()[0].id;
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        raw.query_row("SELECT address FROM devices WHERE id=?1", [id], |r| r
+            .get::<_, String>(0))
+            .unwrap(),
+        "TEST-SERIAL01"
+    );
+    raw.execute(
+        "UPDATE devices SET address='test-serial01' WHERE id=?1",
+        [id],
+    )
+    .unwrap();
+    assert_eq!(store.list().unwrap()[0].config.address, "TEST-SERIAL01");
+    assert_eq!(&*store.password(id).unwrap(), "MixedPassword");
+    let mut dual = draft("Dual", "Camera.Example.org");
+    dual.serial = Some("mixed-Serial02".into());
+    store.update(id, &NewDevice::new(dual, "".into())).unwrap();
+    let (host, serial) = raw
+        .query_row(
+            "SELECT address,serial FROM devices WHERE id=?1",
+            [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .unwrap();
+    assert_eq!(host, "Camera.Example.org");
+    assert_eq!(serial, "MIXED-SERIAL02");
+    raw.execute("UPDATE devices SET serial=lower(serial) WHERE id=?1", [id])
+        .unwrap();
+    assert_eq!(
+        store.list().unwrap()[0].config.serial.as_deref(),
+        Some("MIXED-SERIAL02")
+    );
+    assert_eq!(&*store.password(id).unwrap(), "MixedPassword");
+}
+
+#[test]
 fn editing_preserves_or_replaces_password_and_delete_removes_channels() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("crud.db");

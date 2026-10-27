@@ -63,3 +63,21 @@ fn accepts_dual_connection_and_rejects_incomplete_or_invalid_fields() {
     d.address.clear();
     assert!(d.validate().is_err());
 }
+
+#[test]
+fn normalizes_only_serials_preserving_host_and_username_case() {
+    let mut d = device();
+    d.address = "Camera.Example.org".into();
+    d.username = "AdminMixed".into();
+    d.serial = Some("test-Serial01".into());
+    d.normalize_serials();
+    assert_eq!(d.address, "Camera.Example.org");
+    assert_eq!(d.username, "AdminMixed");
+    assert_eq!(d.serial.as_deref(), Some("TEST-SERIAL01"));
+    d.connection = sim_core::ConnectionMode::P2p;
+    d.address = "test-Serial02".into();
+    d.serial = None;
+    d.normalize_serials();
+    assert_eq!(d.address, "TEST-SERIAL02");
+    assert!(d.validate().is_ok());
+}
