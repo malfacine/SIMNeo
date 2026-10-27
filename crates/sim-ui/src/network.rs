@@ -18,6 +18,7 @@ mod rtsp_speed;
 mod tests;
 
 type Failure = Box<dyn Error>;
+include!(concat!(env!("OUT_DIR"), "/p2p_service.rs"));
 pub type Frames = [sim_media::FrameSlot; CAPACITY];
 type Requests = [Option<VideoRequest>; CAPACITY];
 
@@ -165,8 +166,17 @@ impl Coordinator {
         } else {
             read_protected_file(path)?
         };
+        Self::parse(&json)
+    }
+    fn configured(path: Option<&std::path::Path>, embedded: Option<&str>) -> Result<Self, Failure> {
+        if let Some(path) = path {
+            return Self::load(path);
+        }
+        Self::parse(embedded.ok_or("Configuração do serviço P2P ausente.")?)
+    }
+    fn parse(json: &str) -> Result<Self, Failure> {
         let config: Self =
-            serde_json::from_str(&json).map_err(|_| "Configuração do serviço P2P inválida.")?;
+            serde_json::from_str(json).map_err(|_| "Configuração do serviço P2P inválida.")?;
         if config.server.trim().is_empty()
             || config.port == 0
             || config.key.is_empty()
@@ -190,11 +200,9 @@ struct Relay {
 }
 impl Relay {
     fn load(settings: &Settings) -> Result<Self, Failure> {
-        let path = settings.coordinator.as_ref().ok_or(
-            "Configuração do serviço P2P ausente. Use o pacote com o perfil P2P configurado.",
-        )?;
+        let config =
+            Coordinator::configured(settings.coordinator.as_deref(), EMBEDDED_P2P_SERVICE)?;
         let sdk = settings.sdk.as_ref().ok_or("Configure o SDK P2P.")?;
-        let config = Coordinator::load(path)?;
         let client = sim_p2p_t2u::Client::load(sdk, &config.server, config.port, &config.key)?;
         Ok(Self { client, config })
     }

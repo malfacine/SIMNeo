@@ -17,6 +17,16 @@ fn portable_service_profile_loads_without_windows_user_encryption() {
     let profile = serde_json::json!({"server":"example.invalid","port":1250,"key":"synthetic-app","tunnel_password":"synthetic-transport","remote_ip":"127.0.0.1"});
     std::fs::write(&path, profile.to_string()).unwrap();
     let loaded = Coordinator::load(&path).unwrap();
+    let embedded = Coordinator::configured(None, Some(&profile.to_string())).unwrap();
+    assert_eq!(embedded.server, "example.invalid");
+    assert!(Coordinator::configured(None, None).is_err());
+    assert!(
+        Coordinator::configured(
+            Some(&folder.path().join("missing.json")),
+            Some(&profile.to_string())
+        )
+        .is_err()
+    );
     assert_eq!(loaded.server, "example.invalid");
     assert_eq!(loaded.port, 1250);
     assert_eq!(loaded.remote_ip, "127.0.0.1");
@@ -385,7 +395,12 @@ fn dual_connection_tries_serial_after_ip_error_and_reports_missing_configuration
         for e in rx.try_iter() {
             if let Event::Device { state, message, .. } = e {
                 attempted |= message.contains("tentando pelo serial");
-                failed |= state == DeviceState::Error && message.contains("serviço P2P ausente");
+                let expected = if EMBEDDED_P2P_SERVICE.is_some() {
+                    "Configure o SDK P2P"
+                } else {
+                    "serviço P2P ausente"
+                };
+                failed |= state == DeviceState::Error && message.contains(expected);
             }
         }
         failed
