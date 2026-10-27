@@ -49,7 +49,9 @@ e exportação de gravações em dispositivos Intelbras/Dahua compatíveis.
 
 Se quiser apoiar o desenvolvimento do SIMNeo, você pode fazer uma doação pelo LivePix.
 
-[Faça uma doação pelo LivePix](https://widget.livepix.gg/embed/6ef25d27-6530-46dc-9e55-a0ef703b6f18)
+[![Apoie o SIMNeo pelo LivePix: QR Code de malfacine](assets/livepix.png)](https://livepix.gg/malfacine)
+
+[Faça uma doação pelo LivePix](https://livepix.gg/malfacine)
 
 ## Licença
 
