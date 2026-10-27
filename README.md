@@ -45,6 +45,12 @@ O SIMNeo é um projeto independente e está em desenvolvimento. A versão 0.26.0
 inicia sua distribuição pública, com foco em visualização ao vivo, reprodução
 e exportação de gravações em dispositivos Intelbras/Dahua compatíveis.
 
+## Apoie o projeto
+
+Se quiser apoiar o desenvolvimento do SIMNeo, você pode fazer uma doação pelo LivePix.
+
+[Faça uma doação pelo LivePix](https://widget.livepix.gg/embed/6ef25d27-6530-46dc-9e55-a0ef703b6f18)
+
 ## Licença
 
 O código do SIMNeo é disponibilizado sob a licença **GNU AGPL-3.0**.
