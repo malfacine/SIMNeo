@@ -21,6 +21,14 @@ acompanham a pasta `licenses` e as DLLs podem ser substituídas por versões com
 - Build: `ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip`, obtido em 25/10/2026.
 - SHA256 do arquivo original: `edc7450333aae4042e1f4670aa7bcafe4265324ba9f75abf8de49e8b52812389`.
 
+## Microsoft Visual C++ Runtime
+
+O pacote portátil inclui `vcruntime140.dll` x64, sem modificações, obtida da
+pasta de arquivos redistribuíveis do Visual Studio. O componente é proprietário
+da Microsoft e não faz parte do código licenciado sob AGPL-3.0.
+
+- Redistribuição e termos aplicáveis: https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+
 ## Slint e demais dependências
 
 A interface utiliza Slint 1.18.1, sob a opção GPL-3.0 oferecida pelo fornecedor.

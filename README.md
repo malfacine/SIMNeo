@@ -29,6 +29,9 @@ acompanhar suas câmeras.
 
 Mantenha os arquivos do pacote juntos. Execute o programa diretamente da pasta extraída.
 
+O ZIP inclui o runtime Visual C++ x64 necessário ao executável. Mantenha
+`vcruntime140.dll` junto do `SIMNeo.exe`.
+
 ## Conexão com os dispositivos
 
 Você pode usar o IP do dispositivo, o serial ou os dois. Quando ambos estão
