@@ -32,6 +32,9 @@ Mantenha os arquivos do pacote juntos. Execute o programa diretamente da pasta e
 O ZIP inclui o runtime Visual C++ x64 necessário ao executável. Mantenha
 `vcruntime140.dll` junto do `SIMNeo.exe`.
 
+A interface usa renderização por software automaticamente quando o driver não
+oferece OpenGL compatível. Isso é independente da aceleração de vídeo por GPU.
+
 ## Conexão com os dispositivos
 
 Você pode usar o IP do dispositivo, o serial ou os dois. Quando ambos estão

@@ -17,7 +17,7 @@ tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true
-slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "compat-1-18", "accessibility"] }
+slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-18", "accessibility"] }
 
 [build-dependencies]
 slint-build = "=1.18.1"
