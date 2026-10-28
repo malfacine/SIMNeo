@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+appdir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export PATH="$appdir/usr/bin:$PATH"
+export LD_LIBRARY_PATH="$appdir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export XDG_DATA_DIRS="$appdir/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export GSETTINGS_SCHEMA_DIR="$appdir/usr/share/glib-2.0/schemas"
+export FONTCONFIG_FILE="$appdir/usr/share/simneo/fonts.conf"
+export SIMNEO_P2P_LIBRARY="$appdir/usr/bin/assets/libsim_t2u_linux.so"
+export SLINT_BACKEND="${SLINT_BACKEND:-winit-software}"
+export GSK_RENDERER="${GSK_RENDERER:-cairo}"
+exec "$appdir/usr/bin/sim-ui" "$@"

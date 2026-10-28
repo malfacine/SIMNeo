@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 
 pub type ImportKey = Zeroizing<String>;
 
-/// Arquivo de configuração local protegido pelo usuário atual do Windows.
+/// Arquivo de configuração local protegido pelo cofre do usuário atual.
 pub fn read_protected_file(path: &std::path::Path) -> Result<Zeroizing<String>, Error> {
     let protected = std::fs::read(path)?;
     credentials::unprotect(&protected)
@@ -41,7 +41,8 @@ pub enum Error {
     Validation(#[from] ValidationError),
     #[error("Não foi possível acessar o banco local: {0}")]
     Database(#[from] rusqlite::Error),
-    #[error("Não foi possível proteger ou recuperar a credencial do Windows.")]
+    #[cfg_attr(windows, error("Não foi possível proteger ou recuperar a credencial do Windows."))]
+    #[cfg_attr(not(windows), error("Não foi possível proteger ou recuperar a credencial. Verifique o cofre de senhas do usuário e o secret-tool."))]
     Credential,
     #[error("O banco foi criado por uma versão mais recente do SimNEO.")]
     NewerDatabase,

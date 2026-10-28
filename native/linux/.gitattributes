@@ -1,0 +1,2 @@
+*.sh text eol=lf
+appimage/AppRun text eol=lf

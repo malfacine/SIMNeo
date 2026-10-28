@@ -1,4 +1,69 @@
 use super::*;
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_channel_open_ignores_other_slots_and_cancels_only_its_own_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let library = dir.path().join("p2p-test.so");
+    assert!(
+        std::process::Command::new("cc")
+            .args(["-std=c11", "-shared", "-fPIC"])
+            .arg(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../sim-p2p-t2u/tests/fixtures/linux_api.c")
+            )
+            .arg("-o")
+            .arg(&library)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let relay = Relay {
+            client: sim_p2p_t2u::Client::load(&library, "slow", 1, "test").unwrap(),
+            config: Coordinator {
+                server: "slow".into(),
+                port: 1,
+                key: "test".into(),
+                tunnel_password: "test".into(),
+                remote_ip: "127.0.0.1".into(),
+            },
+        };
+        let request = VideoRequest {
+            channel: 0,
+            generation: 1,
+            quality: StreamQuality::Sd,
+            fallback: false,
+            gpu: false,
+        };
+        for changed_slot in [1, 0] {
+            let mut initial = [None; CAPACITY];
+            initial[0] = Some(request);
+            let (tx, mut rx) = watch::channel(initial);
+            let change = async {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                let mut next = initial;
+                next[changed_slot] = if changed_slot == 0 {
+                    None
+                } else {
+                    Some(request)
+                };
+                tx.send(next).unwrap();
+                // O sender deve continuar vivo durante a negociação.
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            };
+            let (result, _) = tokio::join!(
+                prepare_tunnel(&relay, "test-serial", 0, request, &mut rx),
+                change
+            );
+            assert_eq!(result.unwrap().is_some(), changed_slot == 1);
+        }
+    });
+}
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SIMNeo
+Comment=Cliente de videomonitoramento
+Exec=sim-ui
+Icon=simneo
+Terminal=false
+Categories=AudioVideo;Video;
+StartupNotify=true

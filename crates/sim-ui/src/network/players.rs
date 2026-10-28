@@ -4,15 +4,19 @@ use tokio::time::Instant;
 #[cfg(test)]
 mod tests;
 
-struct Running {
+struct Running<'a> {
     request: VideoRequest,
     player: Option<Player>,
     retry_at: Option<Instant>,
     failures: u32,
     quality: StreamQuality,
     fallback: bool,
+    #[cfg(target_os = "linux")]
+    tunnel: Option<sim_p2p_t2u::Tunnel<'a>>,
+    #[cfg(not(target_os = "linux"))]
+    _lifetime: std::marker::PhantomData<&'a ()>,
 }
-impl Running {
+impl Running<'_> {
     fn new(request: VideoRequest) -> Self {
         Self {
             request,
@@ -21,6 +25,10 @@ impl Running {
             failures: 0,
             quality: request.quality,
             fallback: false,
+            #[cfg(target_os = "linux")]
+            tunnel: None,
+            #[cfg(not(target_os = "linux"))]
+            _lifetime: std::marker::PhantomData,
         }
     }
 }
@@ -75,8 +83,9 @@ async fn group(
     if ctx.device.config.manufacturer != Manufacturer::Dahua {
         return Err("Vídeo disponível para Intelbras/Dahua.".into());
     }
-    // Um único túnel RTSP por DVR, compartilhado pelas conexões dos players.
+    // Windows compartilha um túnel RTSP por DVR; Linux prepara cada player em drive.
     let tunnel = match ctx.relay {
+        #[cfg(windows)]
         Some(relay) => {
             let opening = relay.tunnel(&ctx.device.config.address, 554);
             tokio::pin!(opening);
@@ -87,6 +96,10 @@ async fn group(
                 }
             }
         }
+        // Cada player Linux aguarda um canal nativo independente antes de
+        // iniciar o prazo de leitura do FFmpeg (ver drive).
+        #[cfg(target_os = "linux")]
+        Some(_) => None::<sim_p2p_t2u::Tunnel<'_>>,
         None => None,
     };
     let endpoint = tunnel
@@ -108,6 +121,7 @@ async fn group(
         playback.await
     }
 }
+#[cfg_attr(windows, allow(unused_labels))]
 async fn drive(
     ctx: &Context<'_>,
     endpoint: std::net::SocketAddr,
@@ -115,7 +129,7 @@ async fn drive(
     requests: &mut watch::Receiver<Requests>,
 ) -> Result<(), Failure> {
     let mut active: [Option<Running>; CAPACITY] = std::array::from_fn(|_| None);
-    loop {
+    'drive: loop {
         let desired = *requests.borrow_and_update();
         for slot in 0..CAPACITY {
             if active[slot].as_ref().map(|r| r.request) != desired[slot] {
@@ -139,6 +153,41 @@ async fn drive(
                 continue;
             };
             if running.player.is_none() && running.retry_at.is_some_and(|at| at <= Instant::now()) {
+                #[cfg(target_os = "linux")]
+                let endpoint = if let Some(relay) = ctx.relay {
+                    // O túnel compartilhado Windows já aceita conexões prontas.
+                    // No Linux, preparar cada canal antes do decoder evita que
+                    // uma negociação P2P de até 20s consuma seu prazo RTSP de 8s.
+                    let result = prepare_tunnel(
+                        relay,
+                        &ctx.device.config.address,
+                        slot,
+                        running.request,
+                        requests,
+                    )
+                    .await;
+                    match result {
+                        Ok(Some(tunnel)) => {
+                            let endpoint = tunnel.endpoint();
+                            running.tunnel = Some(tunnel);
+                            endpoint
+                        }
+                        Ok(None) => continue 'drive,
+                        Err(error) => {
+                            running.failures += 1;
+                            running.retry_at = Some(Instant::now() + retry_delay(running.failures));
+                            ctx.video(
+                                slot,
+                                running.request,
+                                VideoState::Reconnecting,
+                                format!("Túnel de vídeo: {error}"),
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    endpoint
+                };
                 let uri = sim_media::dahua_rtsp_url_quality(
                     endpoint,
                     &ctx.device.config.username,
@@ -172,6 +221,10 @@ async fn drive(
                     running.request.gpu,
                 ));
                 running.retry_at = None;
+                #[cfg(target_os = "linux")]
+                if *requests.borrow() != desired {
+                    continue 'drive;
+                }
             }
             while let Some(event) = running.player.as_ref().and_then(Player::try_event) {
                 match event {
@@ -203,6 +256,10 @@ async fn drive(
                     }
                     sim_media::Event::Ended(result) => {
                         running.player = None;
+                        #[cfg(target_os = "linux")]
+                        {
+                            running.tunnel = None;
+                        }
                         ctx.clear(slot);
                         let error = result.err().unwrap_or(sim_media::Error::Ended);
                         if running.quality == StreamQuality::Hd
@@ -245,5 +302,28 @@ async fn drive(
             return Ok(());
         }
         tokio::select! {changed=requests.changed()=>{if changed.is_err(){return Ok(());}},_=tokio::time::sleep(Duration::from_millis(40))=>{}}
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn prepare_tunnel<'a>(
+    relay: &'a Relay,
+    serial: &str,
+    slot: usize,
+    request: VideoRequest,
+    requests: &mut watch::Receiver<Requests>,
+) -> Result<Option<sim_p2p_t2u::Tunnel<'a>>, sim_p2p_t2u::Error> {
+    let opening = relay.tunnel(serial, 554);
+    tokio::pin!(opening);
+    loop {
+        tokio::select! {
+            result = &mut opening => return result.map(Some),
+            changed = requests.changed() => {
+                // Alterações de outra posição não cancelam esta negociação.
+                if changed.is_err() || requests.borrow()[slot] != Some(request) {
+                    return Ok(None);
+                }
+            }
+        }
     }
 }

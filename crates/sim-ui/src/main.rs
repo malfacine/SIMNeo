@@ -2,13 +2,15 @@
 mod calendar;
 mod device_form;
 mod export_name;
-mod file_dialog;
+mod platform;
+use platform::file_dialog;
 mod layouts;
 mod mosaic;
 mod network;
 mod playback;
 mod preferences;
-mod startup;
+#[cfg(windows)]
+use platform::startup;
 mod video;
 use sim_core::{Channel, ConnectionMode, Device, DeviceDraft, Manufacturer};
 use sim_storage_import::{NewDevice, Store, import_simnext_zip};
@@ -39,11 +41,7 @@ enum Command {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut path = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .ok_or("LOCALAPPDATA não está definido.")?
-        .join("SimNEO")
-        .join("simneo.db");
+    let mut path = sim_core::platform::data_directory()?.join("simneo.db");
     let mut smoke = false;
     let mut video_smoke = false;
     let mut mosaic_smoke = false;
@@ -52,13 +50,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut restore_smoke = false;
     let mut connection_smoke = false;
     let mut settings = network::Settings {
-        sdk: std::env::var_os("SIMNEO_P2P_DLL").map(PathBuf::from),
+        sdk: platform::p2p_library_override(),
         coordinator: std::env::var_os("SIMNEO_P2P_CONFIG").map(PathBuf::from),
     };
     // Configuração local ao executável; caminhos relativos usam a pasta do EXE.
     #[derive(serde::Deserialize)]
     struct LocalSettings {
-        #[serde(rename = "p2pDll")]
+        #[serde(rename = "p2pDll", alias = "p2pLibrary")]
         sdk: Option<PathBuf>,
         #[serde(rename = "p2pConfig")]
         coordinator: Option<PathBuf>,
@@ -83,12 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     if settings.sdk.is_none() {
-        let bundled = std::env::current_exe()?
-            .parent()
-            .unwrap()
-            .join("assets/libt2u.dll");
-        let source = std::env::current_dir()?.join("assets/libt2u.dll");
-        settings.sdk = [bundled, source].into_iter().find(|path| path.is_file());
+        settings.sdk = platform::find_p2p_library()?;
     }
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -151,6 +144,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     ui.set_option_restore(preferences.borrow().restore);
     ui.set_option_gpu(preferences.borrow().gpu);
+    ui.set_startup_supported(cfg!(windows));
+    #[cfg(windows)]
     ui.set_option_startup(startup::enabled(&std::env::current_exe()?, &path)?);
     let db_path = path.clone();
     let (tx, rx) = mpsc::sync_channel::<Command>(8);
@@ -235,20 +230,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
             let result = (|| -> Result<(), Box<dyn Error>> {
+                #[cfg(windows)]
                 let exe = std::env::current_exe()?;
+                #[cfg(windows)]
                 let old_startup = startup::enabled(&exe, &db)?;
                 let next = preferences::Preferences {
                     restore: ui.get_option_restore(),
-                    startup: ui.get_option_startup(),
+                    startup: cfg!(windows) && ui.get_option_startup(),
                     gpu: ui.get_option_gpu(),
                     view: video.snapshot(&ui, &devices.borrow()),
                 };
                 let store = Store::open(&db)?;
                 let json = serde_json::to_string(&next)?;
+                #[cfg(windows)]
                 if next.startup != old_startup {
                     startup::set(next.startup, &exe, &db)?;
                 }
                 if let Err(error) = store.set_setting("preferences", &json) {
+                    #[cfg(windows)]
                     if next.startup != old_startup {
                         startup::set(old_startup, &exe, &db)?;
                     }
@@ -464,9 +463,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
             ui.set_dialog("picking".into());
-            let owner =
-                unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }
-                    as isize;
+            let owner = platform::foreground_owner();
             let weak = ui.as_weak();
             std::thread::spawn(move || {
                 let picked = file_dialog::pick_zip(owner);
@@ -622,8 +619,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         move||{
             let Some(ui)=weak.upgrade()else{return;};
             while let Ok(event)=network_rx.try_recv(){
-                if let network::Event::Archive{token,update}=event {playback.event(&ui,token,update);continue;}
+                if let network::Event::Archive{token,update}=event {
+                    #[cfg(target_os = "linux")]
+                    if playback_smoke {
+                        match &update {
+                            network::archive::Update::Error(message) | network::archive::Update::SlotError{message,..} => eprintln!("SIMNeo Linux: playback · {message}"),
+                            _ => {}
+                        }
+                    }
+                    playback.event(&ui,token,update);continue;
+                }
                 if let network::Event::Probe{token,result}=event {tester.result(&ui,token,result);continue;}
+                #[cfg(target_os = "linux")]
+                if mosaic_smoke && let network::Event::Video{slot,state,message,..}=&event {
+                    println!("SIMNeo Linux: posição {} · {state:?} · {message}",slot+1);
+                }
+                #[cfg(target_os = "linux")]
+                if (mosaic_smoke || video_smoke) && let network::Event::Device{state,message,..}=&event {
+                    println!("SIMNeo Linux: dispositivo · {state:?} · {message}");
+                }
                 if (video_smoke||mosaic_smoke) && let network::Event::Device{message,..}=&event
                     && (message.starts_with("Conectado por IP") || message.starts_with("Conectado pelo serial") || message.starts_with("Conexão por IP falhou")) {
                     println!("SIMNeo: {message}");
@@ -667,7 +681,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     1 if ui.get_playback_ready() && ui.get_playback_running() && !ui.get_playback_busy()=>{println!("SIMNeo: busca iniciou reprodução automaticamente.");playback_phase=2;}
                     2 if playback.displayed.get()>=40=>{ui.invoke_play_pause();playback_pause_at=std::time::Instant::now();playback_pause_clock=ui.get_playback_clock().to_string();playback_phase=3;}
                     3 if playback_pause_at.elapsed()>=Duration::from_secs(1) && ui.get_playback_paused()=>{if ui.get_playback_clock()==playback_pause_clock.as_str(){println!("SIMNeo: pausa preservou posição; buscando metade do período.");ui.invoke_seek_playback(0.5);playback_baseline=playback.displayed.get();playback_phase=4;}else{playback_pause_clock=ui.get_playback_clock().to_string();playback_pause_at=std::time::Instant::now();}}
-                    4 if playback.displayed.get()>=playback_baseline+30 && ui.get_playback_clock().as_str()>="00:01:00"=>{println!("SIMNeo: seek real exibiu quadros após 00:01:00; exportando trecho MP4.");ui.invoke_prepare_export();assert_eq!(ui.get_export_quality(),0);ui.set_export_from("00:00:03".into());ui.set_export_to("00:00:13".into());ui.invoke_export_range_edited();assert!(ui.get_export_filename().ends_with("-2026-10-26-00-00-03-00-00-13.mp4"));assert_eq!(ui.get_export_filename(),ui.get_export_path());println!("SIMNeo: nome automático acompanha o período; qualidade HD selecionada.");ui.set_export_path(format!("D:/Server/apps/SimNEO/data/playback-ui-{}.mp4",std::process::id()).into());ui.invoke_export_playback();playback_phase=5;}
+                    4 if playback.displayed.get()>=playback_baseline+30 && ui.get_playback_clock().as_str()>="00:01:00"=>{println!("SIMNeo: seek real exibiu quadros após 00:01:00; exportando trecho MP4.");ui.invoke_prepare_export();assert_eq!(ui.get_export_quality(),0);ui.set_export_from("00:00:03".into());ui.set_export_to("00:00:13".into());ui.invoke_export_range_edited();assert!(ui.get_export_filename().ends_with("-2026-10-26-00-00-03-00-00-13.mp4"));assert_eq!(ui.get_export_filename(),ui.get_export_path());println!("SIMNeo: nome automático acompanha o período; qualidade HD selecionada.");ui.set_export_path(platform::playback_smoke_path().into());ui.invoke_export_playback();playback_phase=5;}
                     5 if !ui.get_export_busy() && ui.get_export_message().starts_with("MP4 salvo:")=>{println!("SIMNeo: playback, pausa, seek e exportação MP4 validados na interface.");ui.invoke_playback_speed_changed(1);ui.invoke_seek_playback(0.0);playback_baseline=playback.displayed.get();playback_phase=7;}
                     7 if ui.get_playback_running() && !ui.get_playback_busy() && playback.displayed.get()>playback_baseline+2=>{playback_pause_at=std::time::Instant::now();playback_pause_clock=ui.get_playback_clock().to_string();playback_phase=8;}
                     8 if playback_pause_at.elapsed()>=Duration::from_millis(1500)=>{let second=|s:&str| sim_core::recording::Stamp::parse(&format!("2026-10-26 {s}")).unwrap().second();let advanced=second(ui.get_playback_clock().as_str()).saturating_sub(second(&playback_pause_clock));let rate=1u32<<playback_speed_step;println!("SIMNeo: velocidade {rate}x avançou {advanced}s em {:.2}s.",playback_pause_at.elapsed().as_secs_f64());assert!(f64::from(advanced)>=f64::from(rate)*playback_pause_at.elapsed().as_secs_f64()*0.5);if playback_speed_step==4{playback_verified.set(true);playback_phase=6;let _=slint::quit_event_loop();}else{playback_speed_step+=1;ui.invoke_playback_speed_changed(playback_speed_step);ui.invoke_seek_playback(0.0);playback_baseline=playback.displayed.get();playback_phase=7;}}

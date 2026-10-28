@@ -45,12 +45,9 @@ impl Controller {
         let tiles = Rc::new(VecModel::from(vec![VideoTile::default(); SLOTS]));
         ui.set_playback_channels(channels.clone().into());
         ui.set_playback_tiles(tiles.clone().into());
-        let mut now = unsafe { std::mem::zeroed() };
-        unsafe {
-            windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut now);
-        }
-        ui.set_playback_date(format!("{:04}-{:02}-{:02}", now.wYear, now.wMonth, now.wDay).into());
-        Self::choose_date(ui, now.wYear as i32, now.wMonth as i32, now.wDay as i32);
+        let now = crate::platform::local_date();
+        ui.set_playback_date(format!("{:04}-{:02}-{:02}", now.0, now.1, now.2).into());
+        Self::choose_date(ui, now.0, now.1, now.2);
         Rc::new(Self {
             video,
             devices: Default::default(),
@@ -84,15 +81,12 @@ impl Controller {
     }
     fn calendar_month(ui: &AppWindow, year: i32, month: i32) {
         let date = ui.get_playback_calendar_date();
-        let mut today = unsafe { std::mem::zeroed() };
-        unsafe {
-            windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut today);
-        }
+        let today = crate::platform::local_date();
         let cells = crate::calendar::cells(
             year,
             month,
             (date.year, date.month, date.day),
-            (today.wYear as i32, today.wMonth as i32, today.wDay as i32),
+            (today.0, today.1, today.2),
         );
         ui.set_calendar_year(year);
         ui.set_calendar_month(month);
@@ -691,16 +685,8 @@ impl Controller {
             let weak = ui.as_weak();
             move || {
                 if let Some(ui) = weak.upgrade() {
-                    let mut today = unsafe { std::mem::zeroed() };
-                    unsafe {
-                        windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut today);
-                    }
-                    Self::choose_date(
-                        &ui,
-                        today.wYear as i32,
-                        today.wMonth as i32,
-                        today.wDay as i32,
-                    );
+                    let today = crate::platform::local_date();
+                    Self::choose_date(&ui, today.0, today.1, today.2);
                 }
             }
         });
@@ -739,9 +725,7 @@ impl Controller {
                     return;
                 };
                 let suggested = ui.get_export_path().to_string();
-                let owner =
-                    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }
-                        as isize;
+                let owner = crate::platform::foreground_owner();
                 let weak = weak.clone();
                 std::thread::spawn(move || {
                     let path = crate::file_dialog::save_mp4(owner, &suggested);

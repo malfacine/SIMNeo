@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use thiserror::Error;
 pub mod recording;
+pub mod platform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Manufacturer {

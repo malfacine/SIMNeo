@@ -1,6 +1,8 @@
+#[cfg(windows)]
 use sim_p2p_t2u::T2uNetStat;
 
 #[test]
+#[cfg(windows)]
 fn native_status_layout_matches_shipped_wrapper() {
     assert_eq!(std::mem::size_of::<T2uNetStat>(), 88);
     assert_eq!(std::mem::offset_of!(T2uNetStat, port), 20);

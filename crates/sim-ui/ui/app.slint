@@ -162,6 +162,7 @@ export component AppWindow inherits Window {
     in-out property <string> import-path;
     in-out property <string> zip-password;
     in-out property <bool> option-restore: true;
+    in property <bool> startup-supported: true;
     in-out property <bool> option-startup: false;
     in-out property <bool> option-gpu: true;
     in property <string> options-message;
@@ -482,8 +483,8 @@ export component AppWindow inherits Window {
                     Text {text:"Inicialização";font-weight:600;color:#34454e;}
                     CheckBox {text:"Iniciar com a última visualização usada";checked<=>root.option-restore;}
                     Label {text:"Reabre o layout e as câmeras ao iniciar o SIMNeo.";wrap:word-wrap;}
-                    CheckBox {text:"Iniciar com o Windows";checked<=>root.option-startup;}
-                    Label {text:"Abre o SIMNeo ao entrar neste usuário do Windows.";wrap:word-wrap;}
+                    if root.startup-supported: CheckBox {text:"Iniciar com o Windows";checked<=>root.option-startup;}
+                    if root.startup-supported: Label {text:"Abre o SIMNeo ao entrar neste usuário do Windows.";wrap:word-wrap;}
                     Divider {}
                     Text {text:"Vídeo";font-weight:600;color:#34454e;}
                     CheckBox {text:"Ativar aceleração por GPU";checked<=>root.option-gpu;}
